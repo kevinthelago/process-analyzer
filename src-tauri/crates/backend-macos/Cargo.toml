@@ -1,0 +1,22 @@
+[package]
+name = "backend-macos"
+version = "0.1.0"
+edition = "2021"
+description = "macOS capture backend: Mach thread-suspend sampling, DTrace io/sched, task_info memory, dyld image list, xctrace fallback"
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+thiserror = "2"
+tracing = "0.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Standalone workspace root — temporary until app-shell adds this crate to
+# src-tauri/Cargo.toml workspace.members.  Remove this table at that point.
+[workspace]
