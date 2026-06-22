@@ -1,0 +1,17 @@
+[workspace]
+members = ["crates/trace-core"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Process Analyzer Contributors"]
+
+[workspace.dependencies]
+arrow        = { version = "55", features = ["ipc"] }
+parquet      = { version = "55", features = ["arrow"] }
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+thiserror    = "2"
+tempfile     = "3"
