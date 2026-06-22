@@ -105,6 +105,10 @@ impl<R: Recorder> Recorder for NormalizingRecorder<R> {
             }
             RawEvent::Frame(e) => RawEvent::Frame(self.symbolicate_frame(e)),
             // StackEntry has no timestamp.
+            // TODO: add RawEvent::ModuleLoad / ModuleUnload arms here once
+            // trace-core adds those variants (contracts/trace_core.md §A).
+            // They should call register_module/unregister_module and return
+            // early (not forwarded to the inner recorder).
             other => other,
         };
         self.inner.record(event)

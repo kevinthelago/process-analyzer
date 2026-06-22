@@ -37,9 +37,61 @@ address, the frame passes through unchanged.
 
 ## Module registration
 
-Capture backends must call `NormalizingRecorder::register_module(ModuleEntry)`
-when a module is mapped into a process's address space.  Without module entries,
-frame address to symbol resolution degrades to unknown (frame passes through).
+For frame symbolication to work, the normalizer's `Symbolicator` must know the
+process module map.  There are two ways to populate it:
+
+### A – `RawEvent::ModuleLoad` (preferred, requires trace-core change)
+
+Add two new variants to `trace_core::RawEvent`:
+
+```rust
+ModuleLoad(ModuleLoadEvent),
+ModuleUnload(ModuleUnloadEvent),
+```
+
+```rust
+pub struct ModuleLoadEvent {
+    pub timestamp_ns: i64,
+    pub process_id: u32,
+    pub base_address: u64,
+    pub size: u64,
+    pub path: String,
+    /// Build ID: ELF build-id, Mach-O LC_UUID, or Windows PDB GUID+age
+    pub build_id: Option<Vec<u8>>,
+}
+
+pub struct ModuleUnloadEvent {
+    pub timestamp_ns: i64,
+    pub process_id: u32,
+    pub base_address: u64,
+}
+```
+
+The normalizer will intercept these in its `Recorder::record()` implementation,
+call `register_module()`/`unregister_module()`, and **not** forward them to the
+inner recorder (they are normalizer-internal bookkeeping, not recorded metrics).
+
+**Status: pending — trace-core stream must add these variants.**
+
+The Windows ETW consumer already collects `IMAGE_LOAD` events via
+`ImageLoadGuid {2cb15d1d-5fc1-11d2-abe1-00a0c911f518}` opcode 10 (see
+`backend-windows/src/etw/consumer.rs:132`). The macOS backend already collects
+`DyldImage { load_address, path, uuid }` data (see
+`backend-macos/src/types.rs`). Both backends need to emit these events once the
+variant exists.
+
+### B – Direct API call (workaround until variant lands)
+
+A caller that has direct access to the `NormalizingRecorder` (not via channel)
+can call:
+
+```rust
+rec.register_module(ModuleEntry { base, size, path, build_id });
+rec.unregister_module(base);
+```
+
+This is only feasible when the same Rust call site owns both the recorder and
+the module-load notification — e.g., a single-process integration test.
 
 ## Normalizer output
 
