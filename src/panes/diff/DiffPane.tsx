@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { PixiRenderer } from '../../render/PixiRenderer';
 import { Canvas2dFallback } from '../../render/Canvas2dFallback';
 import type { Viewport } from '../../render/types';

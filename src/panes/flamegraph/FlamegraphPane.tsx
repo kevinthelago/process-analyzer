@@ -3,7 +3,6 @@ import { PixiRenderer } from '../../render/PixiRenderer';
 import { Canvas2dFallback } from '../../render/Canvas2dFallback';
 import type { Viewport } from '../../render/types';
 import type { TimeRange } from '../../contracts/selection-store';
-import { fitX } from '../../render/viewport';
 import { buildFlamegraphFrame } from './FlamegraphRenderer';
 import { useFlamegraph } from './useFlamegraph';
 import { SearchOverlay } from './SearchOverlay';

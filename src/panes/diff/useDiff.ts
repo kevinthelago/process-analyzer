@@ -76,16 +76,24 @@ export function useDiff(opts: UseDiffOptions): [DiffState, DiffActions] {
 }
 
 function arrowToDiffRows(table: ReturnType<typeof tableFromIPC>): RawDiffRow[] {
+  const colId = table.getChild('id');
+  const colParentId = table.getChild('parent_id');
+  const colFrame = table.getChild('frame') ?? table.getChild('symbol_name');
+  const colBaselineNs = table.getChild('baseline_ns');
+  const colRegressionNs = table.getChild('regression_ns');
+  const colDeltaPct = table.getChild('delta_pct');
+  const colDepth = table.getChild('depth');
+
   const rows: RawDiffRow[] = [];
   for (let i = 0; i < table.numRows; i++) {
     rows.push({
-      id: Number(table.getChildAt(0)?.get(i) ?? i),
-      parentId: Number(table.getChildAt(1)?.get(i) ?? -1),
-      frame: String(table.getChildAt(2)?.get(i) ?? ''),
-      baselineNs: Number(table.getChildAt(3)?.get(i) ?? 0),
-      regressionNs: Number(table.getChildAt(4)?.get(i) ?? 0),
-      deltaPct: Number(table.getChildAt(5)?.get(i) ?? 0),
-      depth: Number(table.getChildAt(6)?.get(i) ?? 0),
+      id: Number(colId?.get(i) ?? i),
+      parentId: Number(colParentId?.get(i) ?? -1),
+      frame: String(colFrame?.get(i) ?? ''),
+      baselineNs: Number(colBaselineNs?.get(i) ?? 0),
+      regressionNs: Number(colRegressionNs?.get(i) ?? 0),
+      deltaPct: Number(colDeltaPct?.get(i) ?? 0),
+      depth: Number(colDepth?.get(i) ?? 0),
     });
   }
   return rows;

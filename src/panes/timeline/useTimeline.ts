@@ -94,16 +94,25 @@ export function useTimeline(opts: UseTimelineOptions): [TimelineState, TimelineA
 // ---------------------------------------------------------------------------
 
 function arrowTableToEvents(table: ReturnType<typeof tableFromIPC>): TimelineEvent[] {
+  // Use named column access so column order in the Arrow IPC doesn't matter.
+  const colTimeNs = table.getChild('time_ns');
+  const colDurationNs = table.getChild('duration_ns');
+  const colPid = table.getChild('process_id') ?? table.getChild('pid');
+  const colTid = table.getChild('thread_id') ?? table.getChild('tid');
+  const colName = table.getChild('name');
+  const colKind = table.getChild('kind');
+  const colDepth = table.getChild('depth');
+
   const events: TimelineEvent[] = [];
   for (let i = 0; i < table.numRows; i++) {
     events.push({
-      timeNs: Number(table.getChildAt(0)?.get(i) ?? 0),
-      durationNs: Number(table.getChildAt(1)?.get(i) ?? 0),
-      pid: Number(table.getChildAt(2)?.get(i) ?? 0),
-      tid: Number(table.getChildAt(3)?.get(i) ?? 0),
-      name: String(table.getChildAt(4)?.get(i) ?? ''),
-      kind: String(table.getChildAt(5)?.get(i) ?? 'cpu'),
-      depth: Number(table.getChildAt(6)?.get(i) ?? 0),
+      timeNs: Number(colTimeNs?.get(i) ?? 0),
+      durationNs: Number(colDurationNs?.get(i) ?? 0),
+      pid: Number(colPid?.get(i) ?? 0),
+      tid: Number(colTid?.get(i) ?? 0),
+      name: String(colName?.get(i) ?? ''),
+      kind: String(colKind?.get(i) ?? 'cpu'),
+      depth: Number(colDepth?.get(i) ?? 0),
     });
   }
   return events;

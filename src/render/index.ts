@@ -20,3 +20,11 @@ export {
   fitX,
 } from './viewport';
 export { makeTimeScale, makeValueScale, formatNs, formatDeltaPct } from './scales';
+export type {
+  QueryTimelineEventsCmd,
+  QueryTimelineEventsArgs,
+  QueryCallTreeCmd,
+  QueryCallTreeArgs,
+  QueryCallTreeDiffCmd,
+  QueryCallTreeDiffArgs,
+} from './ipc-contract';

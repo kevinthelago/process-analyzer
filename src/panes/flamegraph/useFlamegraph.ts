@@ -116,15 +116,22 @@ export function useFlamegraph(opts: UseFlamegraphOptions): [FlamegraphState, Fla
 }
 
 function arrowToRows(table: ReturnType<typeof tableFromIPC>): RawRow[] {
+  const colId = table.getChild('id');
+  const colParentId = table.getChild('parent_id');
+  const colFrame = table.getChild('frame') ?? table.getChild('symbol_name');
+  const colSelfNs = table.getChild('self_ns');
+  const colTotalNs = table.getChild('total_ns');
+  const colDepth = table.getChild('depth');
+
   const rows: RawRow[] = [];
   for (let i = 0; i < table.numRows; i++) {
     rows.push({
-      id: Number(table.getChildAt(0)?.get(i) ?? i),
-      parentId: Number(table.getChildAt(1)?.get(i) ?? -1),
-      frame: String(table.getChildAt(2)?.get(i) ?? ''),
-      selfNs: Number(table.getChildAt(3)?.get(i) ?? 0),
-      totalNs: Number(table.getChildAt(4)?.get(i) ?? 0),
-      depth: Number(table.getChildAt(5)?.get(i) ?? 0),
+      id: Number(colId?.get(i) ?? i),
+      parentId: Number(colParentId?.get(i) ?? -1),
+      frame: String(colFrame?.get(i) ?? ''),
+      selfNs: Number(colSelfNs?.get(i) ?? 0),
+      totalNs: Number(colTotalNs?.get(i) ?? 0),
+      depth: Number(colDepth?.get(i) ?? 0),
     });
   }
   return rows;
