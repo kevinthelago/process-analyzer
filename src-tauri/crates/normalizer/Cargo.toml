@@ -1,14 +1,15 @@
 [package]
-name = "normalizer"
-version = "0.1.0"
-edition = "2021"
+name        = "normalizer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 symbolicator = { path = "../symbolicator" }
-trace-core   = { workspace = true }
+trace-core   = { path = "../trace-core" }
 thiserror    = { workspace = true }
 # Fast integer hashing for frame-address interning
 rustc-hash   = "2"
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

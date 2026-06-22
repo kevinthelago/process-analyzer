@@ -5,7 +5,8 @@ edition.workspace = true
 description = "Recording session state machine and capture orchestration for Process Analyzer"
 
 [dependencies]
-trace-core = { path = "../trace-core" }
+trace-core  = { path = "../trace-core" }
+normalizer  = { path = "../normalizer" }
 thiserror     = { workspace = true }
 tokio         = { version = "1", features = ["sync", "time", "process", "rt", "macros", "fs"] }
 tokio-stream  = "0.1"

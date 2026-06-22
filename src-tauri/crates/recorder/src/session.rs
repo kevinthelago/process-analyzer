@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::{mpsc, watch, Mutex};
 
+use normalizer::NormalizingRecorder;
 use trace_core::{
     Manifest, RawEvent, StandardRecorder, TraceStore, DEFAULT_BATCH_SIZE,
     recorder::Recorder as CoreRecorder,
@@ -159,7 +160,7 @@ async fn drive_session<R: Recorder>(
     manifest.hostname = hostname();
     manifest.arch = Some(current_arch().to_owned());
     let store = TraceStore::new(manifest);
-    let mut rec = StandardRecorder::new(store, DEFAULT_BATCH_SIZE);
+    let mut rec = NormalizingRecorder::new(StandardRecorder::new(store, DEFAULT_BATCH_SIZE));
 
     let mut rx: mpsc::Receiver<RawEvent> = {
         let mut slot = event_rx_slot.lock().await;
@@ -208,7 +209,7 @@ async fn drive_session<R: Recorder>(
                 match event {
                     Some(ev) => {
                         if let Err(e) = rec.record(ev) {
-                            tracing::error!("StandardRecorder error: {e}");
+                            tracing::error!("NormalizingRecorder error: {e}");
                             finalize_reason = FinalizeReason::BackendError(e.to_string());
                             break;
                         }
@@ -237,7 +238,7 @@ async fn drive_session<R: Recorder>(
     // ── Finalizing: finish the store and persist ──────────────────────────────
     set_state(&status_tx, SessionState::Finalizing);
 
-    let mut store = match rec.finish() {
+    let mut store = match rec.into_inner().finish() {
         Ok(s) => s,
         Err(e) => {
             set_failed(&status_tx, RecorderError::ContainerError(e.to_string()));

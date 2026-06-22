@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "crates/trace-core",
+    "crates/symbolicator",
+    "crates/normalizer",
     "crates/backend-windows",
     "crates/backend-macos",
     "crates/import",
