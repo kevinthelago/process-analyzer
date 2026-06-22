@@ -5,6 +5,9 @@ members = [
     "crates/backend-macos",
     "crates/import",
     "crates/recorder",
+    "crates/query",
+    "crates/analysis",
+    "crates/diff",
 ]
 resolver = "2"
 
@@ -15,9 +18,14 @@ license = "MIT OR Apache-2.0"
 authors = ["Process Analyzer Contributors"]
 
 [workspace.dependencies]
-arrow        = { version = "55", features = ["ipc"] }
-parquet      = { version = "55", features = ["arrow"] }
+# arrow 53 is required by datafusion 43; upgrade together when datafusion bumps arrow
+arrow        = { version = "53", features = ["ipc", "prettyprint"] }
+parquet      = { version = "53", features = ["arrow"] }
 serde        = { version = "1", features = ["derive"] }
 serde_json   = "1"
 thiserror    = "2"
 tempfile     = "3"
+datafusion   = "43"
+tokio        = { version = "1", features = ["full"] }
+tokio-util   = { version = "0.7", features = ["rt"] }
+tracing      = "0.1"
