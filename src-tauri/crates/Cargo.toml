@@ -1,0 +1,11 @@
+# Dev workspace — covers only the symbols-normalize stream's crates.
+# The main Tauri workspace (src-tauri/Cargo.toml) will supersede this at merge.
+[workspace]
+resolver = "2"
+members = [
+    "symbolicator",
+    "normalizer",
+]
+
+[workspace.dependencies]
+thiserror = "1"
