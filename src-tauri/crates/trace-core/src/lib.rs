@@ -1,5 +1,6 @@
 pub mod error;
 pub mod event;
+pub mod ipc;
 pub mod manifest;
 pub mod mock;
 pub mod recorder;

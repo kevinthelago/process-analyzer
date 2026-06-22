@@ -282,4 +282,58 @@ impl TraceStore {
     pub fn table_schema(kind: TableKind) -> SchemaRef {
         kind.schema()
     }
+
+    /// Append all batches from `other` into `self`.
+    ///
+    /// Tables present in `other` but not `self` are added; tables present in
+    /// both are extended (not merged/deduped — the caller is responsible for
+    /// ensuring there are no duplicate events).  `self.manifest` is unchanged;
+    /// the caller should update it as appropriate.
+    pub fn merge(&mut self, other: TraceStore) -> Result<()> {
+        for (kind, batches) in other.tables {
+            for batch in batches {
+                self.append_batch(kind, batch)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns `(min_timestamp_ns, max_timestamp_ns)` across all batches for
+    /// `kind`, or `None` if the table is empty or has no `timestamp_ns` column.
+    ///
+    /// Walks the raw Arrow buffers — no DataFusion dependency required.
+    pub fn time_range(&self, kind: TableKind) -> Option<(i64, i64)> {
+        use arrow::array::{Array, Int64Array};
+        use arrow::datatypes::DataType;
+
+        let batches = self.tables.get(&kind)?;
+        let schema = kind.schema();
+        let ts_idx = schema.fields().iter().position(|f| {
+            f.name() == "timestamp_ns" && *f.data_type() == DataType::Int64
+        })?;
+
+        let mut global_min = i64::MAX;
+        let mut global_max = i64::MIN;
+        let mut found_any = false;
+
+        for batch in batches {
+            let col = batch.column(ts_idx);
+            let arr = col.as_any().downcast_ref::<Int64Array>()?;
+            if arr.is_empty() {
+                continue;
+            }
+            // Use arrow's built-in min/max kernels via iterator (avoids pulling
+            // in arrow-arith for a simple reduction).
+            for i in 0..arr.len() {
+                if arr.is_valid(i) {
+                    let v = arr.value(i);
+                    if v < global_min { global_min = v; }
+                    if v > global_max { global_max = v; }
+                    found_any = true;
+                }
+            }
+        }
+
+        if found_any { Some((global_min, global_max)) } else { None }
+    }
 }
