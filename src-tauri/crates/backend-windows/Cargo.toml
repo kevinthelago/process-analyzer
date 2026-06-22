@@ -21,3 +21,7 @@ windows = { version = "0.58", features = [
 ] }
 
 [dev-dependencies]
+
+# Standalone workspace root — temporary until app-shell adds this crate to
+# src-tauri/Cargo.toml workspace.members.  Remove this table at that point.
+[workspace]
