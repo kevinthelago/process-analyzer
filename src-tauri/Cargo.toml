@@ -1,5 +1,8 @@
 [workspace]
-members = ["crates/trace-core"]
+members = [
+    "crates/trace-core",
+    "crates/backend-windows",
+]
 resolver = "2"
 
 [workspace.package]
