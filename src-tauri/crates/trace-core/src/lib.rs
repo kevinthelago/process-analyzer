@@ -3,6 +3,7 @@ pub mod event;
 pub mod ipc;
 pub mod manifest;
 pub mod mock;
+pub mod query_schema;
 pub mod recorder;
 pub mod schema;
 pub mod store;
