@@ -10,7 +10,7 @@
 /// decides to introduce one).
 use tokio::sync::mpsc;
 
-use pa_import::RawEvent;
+use trace_core::RawEvent;
 
 use crate::config::RecordingConfig;
 use crate::error::RecorderError;

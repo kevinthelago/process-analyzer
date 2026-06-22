@@ -1,19 +1,19 @@
 [package]
 name = "pa-import"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Trace file import adapters for Process Analyzer (ETL, perf.data, .patrace)"
 
 [dependencies]
-bytes      = "1"
-thiserror  = "2"
-tokio      = { version = "1", features = ["fs", "io-util", "rt", "sync", "macros"] }
-tokio-stream = "0.1"
-futures    = { version = "0.3", default-features = false, features = ["std"] }
-serde      = { version = "1", features = ["derive"] }
-serde_json = "1"
-tracing    = "0.1"
+trace-core = { path = "../trace-core" }
+arrow         = { workspace = true }
+thiserror     = { workspace = true }
+tokio         = { version = "1", features = ["fs", "io-util", "rt", "sync", "macros"] }
+tokio-stream  = "0.1"
+futures       = { version = "0.3", default-features = false, features = ["std"] }
+serde_json    = { workspace = true }
+tracing       = "0.1"
 
 [dev-dependencies]
 tokio    = { version = "1", features = ["rt-multi-thread", "macros"] }
-tempfile = "3"
+tempfile = { workspace = true }

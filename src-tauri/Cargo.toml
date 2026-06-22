@@ -3,6 +3,8 @@ members = [
     "crates/trace-core",
     "crates/backend-windows",
     "crates/backend-macos",
+    "crates/import",
+    "crates/recorder",
 ]
 resolver = "2"
 

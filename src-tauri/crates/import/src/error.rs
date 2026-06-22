@@ -8,7 +8,7 @@ pub enum ImportError {
     #[error(
         "unsupported trace format for '{path}'; supported: \
          ETL (.etl), Linux perf (perf.data / *.perf.data), \
-         Process Analyzer container (.patrace)"
+         Process Analyzer container (.patrace directory)"
     )]
     UnknownFormat { path: PathBuf },
 
@@ -19,9 +19,8 @@ pub enum ImportError {
         reason: String,
     },
 
-    /// The file was readable up to `boundary_offset`; events before that offset
-    /// were already emitted. The caller receives partial data with this as the
-    /// terminal error from the event stream.
+    /// The source was readable up to `boundary_offset`; events before that offset
+    /// were already emitted. This is the terminal error from the event stream.
     #[error(
         "'{path}' is corrupt; partial data imported up to byte {boundary_offset}: {reason}"
     )]
@@ -38,6 +37,6 @@ pub enum ImportError {
         source: std::io::Error,
     },
 
-    #[error("manifest JSON error in '{path}': {reason}")]
-    ManifestParse { path: PathBuf, reason: String },
+    #[error("trace-core error reading '{path}': {reason}")]
+    TraceCore { path: PathBuf, reason: String },
 }

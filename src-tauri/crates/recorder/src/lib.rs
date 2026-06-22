@@ -8,6 +8,6 @@ pub mod status;
 
 pub use config::{DomainConfig, RecordingConfig, RecordingMode};
 pub use error::RecorderError;
-pub use pa_import::{RawEvent, RawEventKind};
+pub use trace_core::RawEvent;
 pub use session::RecordingSession;
 pub use status::{LiveStatus, SessionState};
