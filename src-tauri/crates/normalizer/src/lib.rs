@@ -1,291 +1,227 @@
-mod batch_builder;
 mod clock;
 mod error;
-mod intern;
-pub mod raw_event;
-pub mod schema;
+pub mod intern;
 
 pub use error::NormalizerError;
-pub use raw_event::RawEvent;
-pub use schema::trace_schema;
 
-use batch_builder::BatchBuilder;
 use clock::ClockCorrector;
-use intern::StackInterner;
-use schema::event_type;
-use symbolicator::{ModuleEntry, Symbolicator};
+use symbolicator::{LookupResult, ModuleEntry, Symbolicator};
+use trace_core::{
+    event::{CpuSampleEvent, FrameInfoEvent, ProcessInfoEvent},
+    Recorder, RawEvent,
+};
 
-use arrow_array::RecordBatch;
-use std::path::PathBuf;
-use std::sync::Arc;
-
-/// Default number of rows per emitted RecordBatch.
-pub const DEFAULT_BATCH_SIZE: usize = 4_096;
-
-/// Statistics accumulated since the last reset.
+/// Statistics accumulated since the normalizer was created.
 #[derive(Debug, Default, Clone)]
 pub struct NormalizerStats {
     pub events_processed: u64,
-    pub events_dropped: u64,
-    pub batches_emitted: u64,
+    pub frames_symbolized: u64,
     pub clock_corrections: u64,
-    pub stacks_interned: u64,
 }
 
-/// Streaming normalizer: converts `RawEvent`s into Arrow `RecordBatch`es.
+/// A [`Recorder`] decorator that applies clock correction and frame symbolication
+/// before forwarding events to an inner [`Recorder`].
 ///
-/// Call `push()` for each event; it returns a batch when the internal buffer
-/// fills.  Call `flush()` at end-of-stream to emit any remaining rows.
-///
-/// One normalizer instance is per-process (or per-capture-session): it owns a
-/// `Symbolicator` and a clock corrector per session, so timestamps and module
-/// maps are coherent within the session.
-pub struct Normalizer {
-    symbolicator: Symbolicator,
+/// Timestamps are corrected to be monotonically non-decreasing across the session.
+/// Frame events with `symbol_name: None` are enriched via the embedded [`Symbolicator`].
+/// Call [`Self::register_module`] when the capture backend sees a module load.
+pub struct NormalizingRecorder<R: Recorder> {
+    inner: R,
+    sym: Symbolicator,
     clock: ClockCorrector,
-    stacks: StackInterner,
-    builder: BatchBuilder,
     stats: NormalizerStats,
 }
 
-impl Normalizer {
-    pub fn new() -> Self {
-        Self::with_batch_size(DEFAULT_BATCH_SIZE)
-    }
-
-    pub fn with_batch_size(batch_size: usize) -> Self {
-        let schema = Arc::new(trace_schema().as_ref().clone());
+impl<R: Recorder> NormalizingRecorder<R> {
+    pub fn new(inner: R) -> Self {
         Self {
-            symbolicator: Symbolicator::new(),
+            inner,
+            sym: Symbolicator::new(),
             clock: ClockCorrector::new(),
-            stacks: StackInterner::new(),
-            builder: BatchBuilder::new(schema, batch_size),
             stats: NormalizerStats::default(),
         }
     }
 
-    /// Feed one event.  Returns `Some(batch)` when the internal buffer is full.
-    pub fn push(&mut self, event: RawEvent) -> Result<Option<RecordBatch>, NormalizerError> {
-        self.stats.events_processed += 1;
-        let batch = self.dispatch(event)?;
-        if batch.is_some() {
-            self.stats.batches_emitted += 1;
-            self.stats.clock_corrections = self.clock.corrections;
-        }
-        Ok(batch)
+    pub fn register_module(&mut self, entry: ModuleEntry) {
+        self.sym.add_module(entry);
     }
 
-    /// Flush any buffered rows.  Returns `Some(batch)` if there were any.
-    pub fn flush(&mut self) -> Result<Option<RecordBatch>, NormalizerError> {
-        let batch = self.builder.flush()?;
-        if batch.is_some() {
-            self.stats.batches_emitted += 1;
-        }
-        self.stats.clock_corrections = self.clock.corrections;
-        Ok(batch)
+    pub fn unregister_module(&mut self, base: u64) {
+        self.sym.remove_module(base);
     }
 
     pub fn stats(&self) -> NormalizerStats {
         let mut s = self.stats.clone();
         s.clock_corrections = self.clock.corrections;
-        s.stacks_interned = self.stacks.len() as u64;
         s
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Internal dispatch
-    // ──────────────────────────────────────────────────────────────────────
-
-    fn dispatch(&mut self, event: RawEvent) -> Result<Option<RecordBatch>, NormalizerError> {
-        use RawEvent::*;
-        match event {
-            ProcessCreate { pid, ppid: _, name, timestamp_ns } => {
-                let ts = self.correct(timestamp_ns);
-                self.append(ts, event_type::PROCESS_CREATE, pid, 0, 0, None, None, None, Some(&name))
-            }
-            ProcessExit { pid, exit_code, timestamp_ns } => {
-                let ts = self.correct(timestamp_ns);
-                self.append(ts, event_type::PROCESS_EXIT, pid, 0, 0, None, Some(exit_code as i64), None, None)
-            }
-            ThreadCreate { pid, tid, name, timestamp_ns } => {
-                let ts = self.correct(timestamp_ns);
-                self.append(ts, event_type::THREAD_CREATE, pid, tid, 0, None, None, None, name.as_deref())
-            }
-            ThreadExit { pid, tid, timestamp_ns } => {
-                let ts = self.correct(timestamp_ns);
-                self.append(ts, event_type::THREAD_EXIT, pid, tid, 0, None, None, None, None)
-            }
-            StackSample { pid, tid, frames, timestamp_ns, cpu } => {
-                let ts = self.correct(timestamp_ns);
-                let stack_id = self.stacks.intern(&frames);
-                self.append(ts, event_type::STACK_SAMPLE, pid, tid, stack_id, None, None, cpu, None)
-            }
-            ContextSwitch { prev_pid, prev_tid, next_pid: _, next_tid: _, timestamp_ns, cpu } => {
-                let ts = self.correct(timestamp_ns);
-                self.append(ts, event_type::CONTEXT_SWITCH, prev_pid, prev_tid, 0, None, None, cpu, None)
-            }
-            FileRead { pid, tid, bytes, timestamp_ns } => {
-                let ts = self.correct(timestamp_ns);
-                self.append(ts, event_type::FILE_READ, pid, tid, 0, Some(bytes), None, None, None)
-            }
-            FileWrite { pid, tid, bytes, timestamp_ns } => {
-                let ts = self.correct(timestamp_ns);
-                self.append(ts, event_type::FILE_WRITE, pid, tid, 0, Some(bytes), None, None, None)
-            }
-            SyscallEnter { pid, tid, nr, timestamp_ns } => {
-                let ts = self.correct(timestamp_ns);
-                self.append(ts, event_type::SYSCALL_ENTER, pid, tid, 0, None, None, Some(nr), None)
-            }
-            SyscallExit { pid, tid, nr, ret, timestamp_ns } => {
-                let ts = self.correct(timestamp_ns);
-                self.append(ts, event_type::SYSCALL_EXIT, pid, tid, 0, None, Some(ret), Some(nr), None)
-            }
-            ModuleLoad { pid, base, size, path, build_id, timestamp_ns } => {
-                let ts = self.correct(timestamp_ns);
-                // Register with the symbolicator.
-                self.symbolicator.add_module(ModuleEntry {
-                    base,
-                    size,
-                    path: PathBuf::from(&path),
-                    build_id,
-                });
-                self.append(ts, event_type::MODULE_LOAD, pid, 0, 0, Some(base), None, None, Some(&path))
-            }
-            ModuleUnload { pid, base, timestamp_ns } => {
-                let ts = self.correct(timestamp_ns);
-                self.symbolicator.remove_module(base);
-                self.append(ts, event_type::MODULE_UNLOAD, pid, 0, 0, Some(base), None, None, None)
-            }
-            Unknown { .. } => {
-                self.stats.events_dropped += 1;
-                Ok(None)
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn append(
-        &mut self,
-        ts: i64,
-        etype: u8,
-        pid: u32,
-        tid: u32,
-        stack_id: u32,
-        aux_u64: Option<u64>,
-        aux_i64: Option<i64>,
-        aux_u32: Option<u32>,
-        name: Option<&str>,
-    ) -> Result<Option<RecordBatch>, NormalizerError> {
-        self.builder.append(ts, etype, pid, tid, stack_id, aux_u64, aux_i64, aux_u32, name)
-    }
-
-    fn correct(&mut self, ts: u64) -> i64 {
-        self.clock.correct(ts) as i64
+    pub fn into_inner(self) -> R {
+        self.inner
     }
 }
 
-impl Default for Normalizer {
-    fn default() -> Self {
-        Self::new()
+impl<R: Recorder> Recorder for NormalizingRecorder<R> {
+    fn record(&mut self, event: RawEvent) -> trace_core::Result<()> {
+        self.stats.events_processed += 1;
+        let event = match event {
+            RawEvent::CpuSample(mut e) => {
+                e.timestamp_ns = self.clock.correct(e.timestamp_ns);
+                RawEvent::CpuSample(e)
+            }
+            RawEvent::Scheduling(mut e) => {
+                e.timestamp_ns = self.clock.correct(e.timestamp_ns);
+                RawEvent::Scheduling(e)
+            }
+            RawEvent::DiskIo(mut e) => {
+                e.timestamp_ns = self.clock.correct(e.timestamp_ns);
+                RawEvent::DiskIo(e)
+            }
+            RawEvent::FileIo(mut e) => {
+                e.timestamp_ns = self.clock.correct(e.timestamp_ns);
+                RawEvent::FileIo(e)
+            }
+            RawEvent::Memory(mut e) => {
+                e.timestamp_ns = self.clock.correct(e.timestamp_ns);
+                RawEvent::Memory(e)
+            }
+            RawEvent::Network(mut e) => {
+                e.timestamp_ns = self.clock.correct(e.timestamp_ns);
+                RawEvent::Network(e)
+            }
+            RawEvent::Process(mut e) => {
+                e.start_time_ns = self.clock.correct(e.start_time_ns);
+                if let Some(t) = e.exit_time_ns {
+                    e.exit_time_ns = Some(self.clock.correct(t));
+                }
+                RawEvent::Process(e)
+            }
+            RawEvent::Thread(mut e) => {
+                e.start_time_ns = self.clock.correct(e.start_time_ns);
+                if let Some(t) = e.exit_time_ns {
+                    e.exit_time_ns = Some(self.clock.correct(t));
+                }
+                RawEvent::Thread(e)
+            }
+            RawEvent::Frame(e) => RawEvent::Frame(self.symbolicate_frame(e)),
+            // StackEntry has no timestamp.
+            other => other,
+        };
+        self.inner.record(event)
+    }
+
+    fn flush(&mut self) -> trace_core::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl<R: Recorder> NormalizingRecorder<R> {
+    fn symbolicate_frame(&mut self, mut e: FrameInfoEvent) -> FrameInfoEvent {
+        if e.symbol_name.is_some() {
+            return e;
+        }
+        match self.sym.lookup(e.address) {
+            LookupResult::Resolved(frames) => {
+                if let Some(f) = frames.into_iter().next() {
+                    e.symbol_name = Some(f.function);
+                    e.module_name = Some(f.module);
+                    e.file_path = f.file;
+                    e.line_number = f.line;
+                    self.stats.frames_symbolized += 1;
+                }
+            }
+            LookupResult::ModuleOffset { module, .. } => {
+                e.module_name = Some(module);
+            }
+            LookupResult::Unknown { .. } => {}
+        }
+        e
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use trace_core::NoOpRecorder;
 
-    fn make_stack_sample(pid: u32, tid: u32, ts: u64) -> RawEvent {
-        RawEvent::StackSample {
-            pid,
-            tid,
-            frames: vec![0x1000, 0x2000],
+    fn cpu(ts: i64) -> RawEvent {
+        RawEvent::CpuSample(CpuSampleEvent {
             timestamp_ns: ts,
-            cpu: Some(0),
-        }
-    }
-
-    #[test]
-    fn unknown_events_are_dropped() {
-        let mut n = Normalizer::new();
-        n.push(RawEvent::Unknown {
-            event_type: 99,
-            timestamp_ns: 1000,
-            payload: vec![],
+            process_id: 1,
+            thread_id: 1,
+            cpu_id: 0,
+            sample_weight: 1,
+            stack_id: None,
         })
-        .unwrap();
-        assert_eq!(n.stats().events_dropped, 1);
-        assert_eq!(n.stats().events_processed, 1);
     }
 
-    #[test]
-    fn flush_empty_returns_none() {
-        let mut n = Normalizer::new();
-        assert!(n.flush().unwrap().is_none());
-    }
-
-    #[test]
-    fn flush_returns_batch_when_rows_buffered() {
-        let mut n = Normalizer::new();
-        n.push(make_stack_sample(1, 2, 1000)).unwrap();
-        let batch = n.flush().unwrap();
-        assert!(batch.is_some());
-        assert_eq!(batch.unwrap().num_rows(), 1);
-    }
-
-    #[test]
-    fn batch_emitted_at_capacity() {
-        let mut n = Normalizer::with_batch_size(4);
-        for i in 0..4 {
-            let result = n.push(make_stack_sample(1, 1, 1000 + i as u64)).unwrap();
-            if i < 3 {
-                assert!(result.is_none(), "batch should not emit before capacity");
-            } else {
-                assert!(result.is_some(), "batch should emit at capacity");
-            }
-        }
-    }
-
-    #[test]
-    fn clock_correction_counted() {
-        let mut n = Normalizer::new();
-        n.push(make_stack_sample(1, 1, 2000)).unwrap();
-        n.push(make_stack_sample(1, 1, 1000)).unwrap(); // backwards
-        assert_eq!(n.stats().clock_corrections, 1);
-    }
-
-    #[test]
-    fn stacks_interned() {
-        let mut n = Normalizer::new();
-        n.push(make_stack_sample(1, 1, 1000)).unwrap();
-        n.push(make_stack_sample(1, 1, 2000)).unwrap(); // same frames
-        assert_eq!(n.stats().stacks_interned, 1); // should be interned as one
-    }
-
-    #[test]
-    fn module_load_registers_with_symbolicator() {
-        let mut n = Normalizer::new();
-        n.push(RawEvent::ModuleLoad {
-            pid: 1,
-            base: 0x40_0000,
-            size: 0x10_0000,
-            path: "/nonexistent/libtest.so".to_owned(),
-            build_id: None,
-            timestamp_ns: 1000,
+    fn frame(addr: u64) -> RawEvent {
+        RawEvent::Frame(FrameInfoEvent {
+            frame_id: addr,
+            address: addr,
+            symbol_name: None,
+            module_name: None,
+            file_path: None,
+            line_number: None,
         })
-        .unwrap();
-        // The module is registered; it degrades gracefully since the file doesn't exist.
-        // Just verify no panic/error.
-        assert_eq!(n.stats().events_processed, 1);
     }
 
     #[test]
-    fn stats_batch_count() {
-        let mut n = Normalizer::with_batch_size(2);
-        n.push(make_stack_sample(1, 1, 1000)).unwrap();
-        n.push(make_stack_sample(1, 1, 2000)).unwrap(); // triggers batch
-        assert_eq!(n.stats().batches_emitted, 1);
-        n.push(make_stack_sample(1, 1, 3000)).unwrap();
-        n.flush().unwrap(); // flush the remaining row
-        assert_eq!(n.stats().batches_emitted, 2);
+    fn pass_through_counts_events() {
+        let mut r = NormalizingRecorder::new(NoOpRecorder);
+        r.record(cpu(1000)).unwrap();
+        assert_eq!(r.stats().events_processed, 1);
+    }
+
+    #[test]
+    fn clock_backwards_counted() {
+        let mut r = NormalizingRecorder::new(NoOpRecorder);
+        r.record(cpu(2000)).unwrap();
+        r.record(cpu(1000)).unwrap();
+        assert_eq!(r.stats().clock_corrections, 1);
+    }
+
+    #[test]
+    fn frame_unresolved_without_module() {
+        let mut r = NormalizingRecorder::new(NoOpRecorder);
+        r.record(frame(0xdead_beef)).unwrap();
+        assert_eq!(r.stats().frames_symbolized, 0);
+    }
+
+    #[test]
+    fn frame_existing_symbol_preserved() {
+        let mut r = NormalizingRecorder::new(NoOpRecorder);
+        r.record(RawEvent::Frame(FrameInfoEvent {
+            frame_id: 1,
+            address: 0x1234,
+            symbol_name: Some("known".to_owned()),
+            module_name: None,
+            file_path: None,
+            line_number: None,
+        }))
+        .unwrap();
+        assert_eq!(r.stats().frames_symbolized, 0);
+    }
+
+    #[test]
+    fn flush_ok() {
+        let mut r = NormalizingRecorder::new(NoOpRecorder);
+        r.flush().unwrap();
+    }
+
+    #[test]
+    fn process_backwards_exit_corrected() {
+        let mut r = NormalizingRecorder::new(NoOpRecorder);
+        r.record(RawEvent::Process(ProcessInfoEvent {
+            process_id: 1,
+            parent_process_id: None,
+            name: "t".to_owned(),
+            cmdline: None,
+            start_time_ns: 5000,
+            exit_time_ns: Some(3000),
+            exit_code: Some(0),
+        }))
+        .unwrap();
+        assert_eq!(r.stats().clock_corrections, 1);
     }
 }

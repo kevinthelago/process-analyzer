@@ -1,5 +1,6 @@
-# Dev workspace — covers only the symbols-normalize stream's crates.
-# The main Tauri workspace (src-tauri/Cargo.toml) will supersede this at merge.
+# Dev workspace — covers the symbols-normalize stream's crates.
+# At merge, remove this file and add symbolicator + normalizer as members
+# of the top-level src-tauri/Cargo.toml workspace (all dep versions align).
 [workspace]
 resolver = "2"
 members = [
@@ -7,5 +8,19 @@ members = [
     "normalizer",
 ]
 
+# Mirror of src-tauri/Cargo.toml [workspace.package] so trace-core can inherit.
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Process Analyzer Contributors"]
+
+# Mirror of src-tauri/Cargo.toml [workspace.dependencies] so trace-core can inherit.
 [workspace.dependencies]
-thiserror = "1"
+arrow      = { version = "55", features = ["ipc"] }
+parquet    = { version = "55", features = ["arrow"] }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror  = "2"
+tempfile   = "3"
+trace-core = { path = "trace-core" }

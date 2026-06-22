@@ -5,13 +5,10 @@ edition = "2021"
 
 [dependencies]
 symbolicator = { path = "../symbolicator" }
-thiserror = { workspace = true }
-# Arrow columnar format — use the individual crates to avoid pulling in arrow-arith
-# which has a chrono::quarter() name collision on recent Rust toolchains.
-arrow-schema = "52"
-arrow-array = "52"
-# Fast integer hashing for stack interning
-rustc-hash = "1"
+trace-core   = { workspace = true }
+thiserror    = { workspace = true }
+# Fast integer hashing for frame-address interning
+rustc-hash   = "2"
 
 [dev-dependencies]
 tempfile = "3"
