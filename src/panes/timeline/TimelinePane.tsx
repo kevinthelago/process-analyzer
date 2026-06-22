@@ -119,6 +119,25 @@ export const TimelinePane: React.FC<TimelinePaneProps> = ({
     isPanning.current = false;
   }, []);
 
+  // Single click: hit-test the event under cursor and scope to its time span
+  // ("click a spike to focus"). Event rects have world-space x=timeNs, w=durationNs.
+  const onClick = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (dragState.isDragging) return;
+      if (!rendererRef.current) return;
+      const domRect = e.currentTarget.getBoundingClientRect();
+      const sx = e.clientX - domRect.left;
+      const sy = e.clientY - domRect.top;
+      const hit = rendererRef.current.hitTest(vpRef.current, sx, sy);
+      // id===0 means a background/ruler rect — ignore those
+      if (!hit || hit.id === 0) return;
+      const startNs = hit.rect.x;
+      const endNs = hit.rect.x + hit.rect.w;
+      onTimeRangeChange({ startNs, endNs });
+    },
+    [dragState.isDragging, onTimeRangeChange],
+  );
+
   // Double-click resets zoom
   const onDoubleClick = useCallback(() => {
     resetZoom();
@@ -141,6 +160,7 @@ export const TimelinePane: React.FC<TimelinePaneProps> = ({
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
+        onClick={onClick}
         onDoubleClick={onDoubleClick}
         {...dragHandlers}
       />
