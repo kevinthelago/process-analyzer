@@ -2,46 +2,47 @@
 
 **Owner:** symbols-normalize stream  
 **Consumer:** normalizer crate (`src-tauri/crates/normalizer`)  
-**Source of truth for Rust definition:** `src-tauri/crates/normalizer/src/raw_event.rs`
+**Authoritative Rust definition:** `src-tauri/crates/trace-core/src/event.rs`
 
-## RawEvent
+This document tracks the interface between trace-core's capture side and the
+normalizer.  The Rust types are the ground truth; this doc explains the contract.
 
-The capture backends (linux-backend, macos-backend, windows-backend) produce a stream of
-`RawEvent` values.  The normalizer consumes this stream via `Normalizer::push(event)`.
+## RawEvent variants (trace-core v0.1.0)
 
-### Variants
-
-| Variant | Fields | Notes |
+| Variant | Key fields | Normalizer action |
 |---|---|---|
-| `ProcessCreate` | pid, ppid, name, timestamp_ns | |
-| `ProcessExit` | pid, exit_code, timestamp_ns | |
-| `ThreadCreate` | pid, tid, name?, timestamp_ns | name is optional |
-| `ThreadExit` | pid, tid, timestamp_ns | |
-| `StackSample` | pid, tid, frames: Vec<u64>, timestamp_ns, cpu? | frames are raw VAs, innermost first |
-| `ContextSwitch` | prev_pid, prev_tid, next_pid, next_tid, timestamp_ns, cpu? | |
-| `FileRead` | pid, tid, bytes, timestamp_ns | |
-| `FileWrite` | pid, tid, bytes, timestamp_ns | |
-| `SyscallEnter` | pid, tid, nr, timestamp_ns | |
-| `SyscallExit` | pid, tid, nr, ret, timestamp_ns | |
-| `ModuleLoad` | pid, base, size, path, build_id?, timestamp_ns | triggers symbolicator registration |
-| `ModuleUnload` | pid, base, timestamp_ns | |
-| `Unknown` | event_type, timestamp_ns, payload | counted and dropped by normalizer |
+| `CpuSample` | timestamp_ns (i64), process_id, thread_id, cpu_id, stack_id? | clock correct |
+| `Scheduling` | timestamp_ns, prev/next pid/tid, event_type, duration_ns? | clock correct |
+| `DiskIo` | timestamp_ns, pid, tid, operation, sector, size_bytes | clock correct |
+| `FileIo` | timestamp_ns, pid, tid, operation, fd?, path_hash?, size_bytes? | clock correct |
+| `Memory` | timestamp_ns, pid, tid?, event_type, address?, size_bytes? | clock correct |
+| `Network` | timestamp_ns, pid, tid?, operation, protocol, size_bytes? | clock correct |
+| `Process` | start_time_ns / exit_time_ns (both corrected), name | clock correct both |
+| `Thread` | start_time_ns / exit_time_ns (both corrected), name? | clock correct both |
+| `Frame` | frame_id, address, symbol_name?, module_name?, file_path?, line_number? | **symbolicate** |
+| `StackEntry` | stack_id, depth, frame_id | pass through unchanged |
 
-### Timestamp contract
+## Timestamp contract
 
-- All `timestamp_ns` values are nanoseconds since an arbitrary per-capture-session epoch.
-- The normalizer corrects backwards jumps (TSC skew, CPU migration) to monotone.
-- The normalizer does **not** require the epoch to align with wall-clock time.
+- All `timestamp_ns` fields are `i64` nanoseconds since an arbitrary per-session epoch.
+- The normalizer corrects backwards jumps globally (single monotone clock per session).
+- `Process.exit_time_ns` and `Thread.exit_time_ns` are also corrected.
 
-### ModuleLoad / address resolution
+## Frame symbolication
 
-- `base` is the virtual address at which the module was mapped.
-- `size` is the size in bytes of the mapping.
-- `path` is the on-disk path to the binary.
-- The normalizer calls `Symbolicator::add_module` when it sees `ModuleLoad`, so that
-  subsequent `StackSample` frames can be resolved.
+When `Frame.symbol_name` is `None`, the normalizer looks up `Frame.address` via
+the `Symbolicator` and fills in `symbol_name`, `module_name`, `file_path`,
+`line_number` when available.  If the symbolicator has no module map for the
+address, the frame passes through unchanged.
 
-## Arrow schema (normalizer output)
+## Module registration
 
-See `src-tauri/crates/normalizer/src/schema.rs` for the authoritative Arrow schema.
-RecordBatches flow out of `Normalizer::push()` / `Normalizer::flush()`.
+Capture backends must call `NormalizingRecorder::register_module(ModuleEntry)`
+when a module is mapped into a process's address space.  Without module entries,
+frame address to symbol resolution degrades to unknown (frame passes through).
+
+## Normalizer output
+
+`NormalizingRecorder<R>` implements `trace_core::Recorder`.  The inner `R`
+(typically `StandardRecorder`) writes the corrected events to a `TraceStore`
+as per-domain Arrow/Parquet tables.
