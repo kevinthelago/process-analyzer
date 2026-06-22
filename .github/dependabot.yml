@@ -1,0 +1,42 @@
+version: 2
+updates:
+  # Rust / Cargo dependencies
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - rust
+    # Group all patch/minor Cargo bumps into one PR per week to reduce noise.
+    groups:
+      cargo-non-breaking:
+        update-types:
+          - minor
+          - patch
+
+  # Frontend / npm dependencies (managed by pnpm)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - frontend
+    groups:
+      npm-non-breaking:
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions — pin action SHAs and keep them current
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci

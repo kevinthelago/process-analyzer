@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches-ignore:
+      - main
+      - develop
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Rust toolchain (skip when no Cargo.toml) ──────────────────────────
+      - name: Install Rust (stable)
+        if: hashFiles('Cargo.toml') != ''
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        if: hashFiles('Cargo.toml') != ''
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-nextest
+        if: hashFiles('Cargo.toml') != ''
+        uses: taiki-e/install-action@nextest
+
+      # ── Node / pnpm toolchain (skip when no package.json) ─────────────────
+      - name: Install pnpm
+        if: hashFiles('package.json') != ''
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Set up Node.js
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      # System libs are only needed when Rust (Tauri) code is present.
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux' && hashFiles('Cargo.toml') != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xvfb \
+            webkit2gtk-driver
+
+      - name: Install frontend dependencies
+        if: hashFiles('package.json') != ''
+        run: pnpm install
+
+      - name: Install Playwright browsers
+        if: hashFiles('package.json') != ''
+        run: pnpm playwright install --with-deps
+
+      # ── Rust unit / integration tests ─────────────────────────────────────
+      - name: cargo nextest
+        if: hashFiles('Cargo.toml') != ''
+        run: cargo nextest run --workspace
+
+      # ── Frontend unit tests ───────────────────────────────────────────────
+      - name: vitest
+        if: hashFiles('package.json') != ''
+        run: pnpm vitest run
+
+      # ── End-to-end tests (Playwright) ─────────────────────────────────────
+      # playwright.config.ts drives how the Tauri app is started; the CI just
+      # supplies the right environment (display on Linux).
+      - name: Playwright — Linux (xvfb)
+        if: runner.os == 'Linux' && hashFiles('package.json') != ''
+        shell: bash
+        run: |
+          if [ -f playwright.config.ts ] || [ -f playwright.config.js ]; then
+            xvfb-run --auto-servernum pnpm playwright test
+          else
+            echo "::notice::No playwright.config found — E2E skipped until app code lands"
+          fi
+
+      - name: Playwright — macOS / Windows
+        if: runner.os != 'Linux' && hashFiles('package.json') != ''
+        shell: bash
+        run: |
+          if [ -f playwright.config.ts ] || [ -f playwright.config.js ]; then
+            pnpm playwright test
+          else
+            echo "::notice::No playwright.config found — E2E skipped until app code lands"
+          fi
