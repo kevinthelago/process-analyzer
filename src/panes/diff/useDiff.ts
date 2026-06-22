@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { tableFromIPC } from 'apache-arrow';
+import type { TimeRange } from '../../contracts/selection-store';
 import { buildDiffTree, type RawDiffRow } from './DiffFlamegraphRenderer';
 import type { DiffNode, DiffTableRow } from './types';
 import { DELTA_THRESHOLD } from './types';
@@ -10,7 +11,7 @@ interface UseDiffOptions {
   regressionTraceId: string | null;
   pid: number | null;
   tid: number | null;
-  timeRange: [number, number] | null;
+  timeRange: TimeRange | null;
 }
 
 interface DiffState {
@@ -46,7 +47,9 @@ export function useDiff(opts: UseDiffOptions): [DiffState, DiffActions] {
       regressionTraceId: regId,
       pid: opts.pid ?? null,
       tid: opts.tid ?? null,
-      timeRangeNs: opts.timeRange ?? null,
+      timeRangeNs: opts.timeRange
+        ? { startNs: opts.timeRange.startNs, endNs: opts.timeRange.endNs }
+        : null,
     })
       .then((buf) => {
         if (cancelled) return;

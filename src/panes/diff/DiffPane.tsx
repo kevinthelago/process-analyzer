@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { PixiRenderer } from '../../render/PixiRenderer';
 import { Canvas2dFallback } from '../../render/Canvas2dFallback';
 import type { Viewport } from '../../render/types';
+import type { TimeRange } from '../../contracts/selection-store';
 import { buildDiffFrame, layoutDiffFlamegraph } from './DiffFlamegraphRenderer';
 import { useDiff } from './useDiff';
 import { DiffTable } from './DiffTable';
@@ -11,7 +12,7 @@ interface DiffPaneProps {
   regressionTraceId: string | null;
   pid: number | null;
   tid: number | null;
-  timeRange: [number, number] | null;
+  timeRange: TimeRange | null;
   className?: string;
 }
 

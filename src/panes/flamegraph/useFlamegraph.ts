@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { tableFromIPC } from 'apache-arrow';
+import type { TimeRange } from '../../contracts/selection-store';
 import { buildCallTree, layoutFlamegraph, type RawRow } from './layout';
 import type { CallNode, FlamegraphRect } from './types';
 
 interface UseFlamegraphOptions {
   pid: number | null;
   tid: number | null;
-  timeRange: [number, number] | null;
+  timeRange: TimeRange | null;
   width: number;
 }
 
@@ -41,7 +42,9 @@ export function useFlamegraph(opts: UseFlamegraphOptions): [FlamegraphState, Fla
     invoke<ArrayBuffer>('query_call_tree', {
       pid: opts.pid ?? null,
       tid: opts.tid ?? null,
-      timeRangeNs: opts.timeRange ?? null,
+      timeRangeNs: opts.timeRange
+        ? { startNs: opts.timeRange.startNs, endNs: opts.timeRange.endNs }
+        : null,
     })
       .then((buf) => {
         if (cancelled) return;

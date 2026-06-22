@@ -1,4 +1,5 @@
 import type { DrawLine, DrawRect, DrawText, SceneFrame, Viewport } from '../../render/types';
+import type { TimeRange } from '../../contracts/selection-store';
 import { worldWidthToScreen } from '../../render/viewport';
 import { formatNs, makeTimeScale } from '../../render/scales';
 import type { Track, TimelineEvent } from './types';
@@ -15,7 +16,7 @@ const DENSITY_SATURATE = 10;
  *
  * Separating layout from PixiJS allows unit testing without a DOM.
  */
-export function buildTimelineFrame(tracks: Track[], vp: Viewport, selRange: [number, number] | null): SceneFrame {
+export function buildTimelineFrame(tracks: Track[], vp: Viewport, selRange: TimeRange | null): SceneFrame {
   const rects: DrawRect[] = [];
   const lines: DrawLine[] = [];
   const texts: DrawText[] = [];
@@ -159,12 +160,12 @@ function buildDensityStrip(track: Track, vp: Viewport, rects: DrawRect[], nextId
   return id;
 }
 
-function buildSelectionOverlay(range: [number, number], vp: Viewport, rects: DrawRect[]): void {
+function buildSelectionOverlay(range: TimeRange, vp: Viewport, rects: DrawRect[]): void {
   rects.push({
     id: 0,
-    x: range[0],
+    x: range.startNs,
     y: vp.top,
-    w: range[1] - range[0],
+    w: range.endNs - range.startNs,
     h: vp.height * vp.vpp,
     color: 0x4e9af1,
     alpha: 0.15,

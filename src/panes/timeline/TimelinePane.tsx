@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { PixiRenderer } from '../../render/PixiRenderer';
 import { Canvas2dFallback } from '../../render/Canvas2dFallback';
 import type { Viewport } from '../../render/types';
+import type { TimeRange } from '../../contracts/selection-store';
 import { buildTimelineFrame } from './TimelineRenderer';
 import { useDragSelect } from './useDragSelect';
 import { useTimeline } from './useTimeline';
@@ -9,9 +10,9 @@ import { useTimeline } from './useTimeline';
 interface TimelinePaneProps {
   pid: number | null;
   tid: number | null;
-  /** Selection store callbacks — fulfilled by app-shell Zustand store */
-  onTimeRangeChange: (range: [number, number] | null) => void;
-  selectedTimeRange: [number, number] | null;
+  /** Wired to app-shell setTimeRange from the Zustand selection store */
+  onTimeRangeChange: (range: TimeRange | null) => void;
+  selectedTimeRange: TimeRange | null;
   className?: string;
 }
 

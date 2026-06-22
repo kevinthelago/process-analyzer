@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { tableFromIPC } from 'apache-arrow';
 import type { Viewport } from '../../render/types';
+import type { TimeRange } from '../../contracts/selection-store';
 import { fitX, pan, zoomX } from '../../render/viewport';
 import type { Track, TimelineEvent } from './types';
 import { RULER_HEIGHT, TRACK_GAP, TRACK_HEIGHT } from './types';
@@ -17,7 +18,7 @@ interface TimelineState {
   tracks: Track[];
   viewport: Viewport;
   isLoading: boolean;
-  totalSpanNs: [number, number];
+  totalSpanNs: TimeRange;
 }
 
 interface TimelineActions {
@@ -29,7 +30,7 @@ interface TimelineActions {
 export function useTimeline(opts: UseTimelineOptions): [TimelineState, TimelineActions] {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [spanNs, setSpanNs] = useState<[number, number]>([0, 1_000_000]);
+  const [spanNs, setSpanNs] = useState<TimeRange>({ startNs: 0, endNs: 1_000_000 });
   const vpRef = useRef<Viewport>(fitX(opts.width, opts.height, 0, 1_000_000));
   const [viewport, setViewport] = useState<Viewport>(vpRef.current);
 
@@ -50,7 +51,7 @@ export function useTimeline(opts: UseTimelineOptions): [TimelineState, TimelineA
         setTracks(built.tracks);
         setSpanNs(built.spanNs);
 
-        const vp = fitX(opts.width, opts.height, built.spanNs[0], built.spanNs[1]);
+        const vp = fitX(opts.width, opts.height, built.spanNs.startNs, built.spanNs.endNs);
         vpRef.current = vp;
         setViewport(vp);
       })
@@ -77,7 +78,7 @@ export function useTimeline(opts: UseTimelineOptions): [TimelineState, TimelineA
   }, []);
 
   const resetZoom = useCallback(() => {
-    const next = fitX(opts.width, opts.height, spanNs[0], spanNs[1]);
+    const next = fitX(opts.width, opts.height, spanNs.startNs, spanNs.endNs);
     vpRef.current = next;
     setViewport(next);
   }, [opts.width, opts.height, spanNs]);
@@ -111,8 +112,8 @@ function arrowTableToEvents(table: ReturnType<typeof tableFromIPC>): TimelineEve
 function buildTracks(
   events: TimelineEvent[],
   _canvasHeight: number,
-): { tracks: Track[]; spanNs: [number, number] } {
-  if (events.length === 0) return { tracks: [], spanNs: [0, 1_000_000] };
+): { tracks: Track[]; spanNs: TimeRange } {
+  if (events.length === 0) return { tracks: [], spanNs: { startNs: 0, endNs: 1_000_000 } };
 
   // Group by tid
   const byTid = new Map<number, TimelineEvent[]>();
@@ -149,5 +150,5 @@ function buildTracks(
     y += trackH;
   }
 
-  return { tracks, spanNs: [minNs, maxNs] };
+  return { tracks, spanNs: { startNs: minNs, endNs: maxNs } };
 }

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PixiRenderer } from '../../render/PixiRenderer';
 import { Canvas2dFallback } from '../../render/Canvas2dFallback';
 import type { Viewport } from '../../render/types';
+import type { TimeRange } from '../../contracts/selection-store';
 import { fitX } from '../../render/viewport';
 import { buildFlamegraphFrame } from './FlamegraphRenderer';
 import { useFlamegraph } from './useFlamegraph';
@@ -10,7 +11,7 @@ import { SearchOverlay } from './SearchOverlay';
 interface FlamegraphPaneProps {
   pid: number | null;
   tid: number | null;
-  timeRange: [number, number] | null;
+  timeRange: TimeRange | null;
   /** Called when user clicks a frame (to focus the selection store) */
   onFrameFocus: (frame: string | null) => void;
   className?: string;

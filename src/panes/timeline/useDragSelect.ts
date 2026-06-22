@@ -1,10 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
 import type { Viewport } from '../../render/types';
+import type { TimeRange } from '../../contracts/selection-store';
 import { screenXToWorld } from '../../render/viewport';
 
 export interface DragState {
   /** Active drag range in world-space ns, null when not dragging */
-  range: [number, number] | null;
+  range: TimeRange | null;
   isDragging: boolean;
 }
 
@@ -22,10 +23,10 @@ export interface DragSelectHandlers {
  */
 export function useDragSelect(
   getViewport: () => Viewport,
-  onCommit: (range: [number, number] | null) => void,
+  onCommit: (range: TimeRange | null) => void,
 ): [DragState, DragSelectHandlers] {
   const startX = useRef<number | null>(null);
-  const [range, setRange] = useState<[number, number] | null>(null);
+  const [range, setRange] = useState<TimeRange | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const onPointerDown = useCallback(
@@ -51,7 +52,7 @@ export function useDragSelect(
       const worldX = screenXToWorld(vp, sx);
       const lo = Math.min(startX.current, worldX);
       const hi = Math.max(startX.current, worldX);
-      setRange([lo, hi]);
+      setRange({ startNs: lo, endNs: hi });
     },
     [getViewport],
   );
@@ -76,7 +77,7 @@ export function useDragSelect(
         return;
       }
 
-      const committed: [number, number] = [lo, hi];
+      const committed: TimeRange = { startNs: lo, endNs: hi };
       setRange(committed);
       onCommit(committed);
     },
